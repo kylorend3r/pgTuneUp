@@ -107,21 +107,26 @@ The tool performs checks in the following categories:
 
 ## Example Output
 
-| Parameter                           | Check Result   | Priority   | Notes                                                                                  |
-|-------------------------------------|---------------|------------|----------------------------------------------------------------------------------------|
-| work_mem                            | FAILED        | HIGH       | Potential usage (51200MB) exceeds 25% limit (32736MB). Reduce work_mem or connections. |
-| random_page_cost/seq_page_cost      | FAILED        | MEDIUM     | For SSD: reduce random_page_cost to within 0.1-0.3 of seq_page_cost                    |
-| maintenance_work_mem                | PASSED        | MEDIUM     | Within recommended limits                                                              |
-| bgwriter_lru_maxpages               | FAILED        | MEDIUM     | Consider increasing bgwriter_lru_maxpages to reduce checkpoint I/O spikes.             |
-| autovacuum_max_workers              | FAILED        | MEDIUM     | Current: 3, Recommended: 6 for 32 CPUs                                                 |
-| max_parallel_maintenance_workers    | FAILED        | MEDIUM     | Current: 2, Recommended: 4 for 32 CPUs                                                 |
-| shared_buffers                      | PASSED        | LOW        | Within acceptable range                                                                |
-| checkpoint_timeout                  | PASSED        | LOW        | Within acceptable range for RTO                                                        |
-| max_connections                     | PASSED        | LOW        | Memory configuration within safe limits                                                |
-| idle_in_transaction_session_timeout | FAILED        | LOW        | No timeout set. Add timeout to prevent resource locks.                                 |
-| idle_session_timeout                | FAILED        | LOW        | No timeout set. Add timeout to terminate inactive sessions.                            |
-| statement_timeout                   | FAILED        | LOW        | No timeout set. Add timeout to prevent long-running queries.                           |
-| max_wal_size                        | PASSED        | LOW        | max_wal_size is properly configured.                                                   |
+| Parameter                           | Check Result   | Priority  | Notes                                                                                                                                                          |
+|-------------------------------------|---------------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| shared_buffers                      | PASSED        | HIGH      | Within acceptable range                                                                                                                                        |
+| max_connections                     | PASSED        | HIGH      | Memory configuration within safe limits                                                                                                                        |
+| work_mem                            | PASSED        | HIGH      | Within reasonable limits                                                                                                                                       |
+| random_page_cost/seq_page_cost      | FAILED        | MEDIUM    | For SSD: reduce random_page_cost to within 0.1-0.3 of seq_page_cost                                                                                            |
+| max_parallel_maintenance_workers    | FAILED        | MEDIUM    | Current: 2, Recommended: 4 for 32 CPUs                                                                                                                         |
+| autovacuum_max_workers              | FAILED        | MEDIUM    | Current: 3, Recommended: 6 for 32 CPUs                                                                                                                         |
+| maintenance_work_mem                | PASSED        | MEDIUM    | Within recommended limits                                                                                                                                      |
+| checkpoint_timeout                  | FAILED        | MEDIUM    | Exceeds RTO (5.0min > 1min). Reduce to meet recovery objectives.                                                                                               |
+| bgwriter_lru_maxpages               | PASSED        | LOW       | bgwriter_lru_maxpages is properly configured.                                                                                                                  |
+| max_wal_size                        | PASSED        | LOW       | max_wal_size is properly configured.                                                                                                                           |
+| idle_session_timeout                | FAILED        | LOW       | No timeout set. Add timeout to terminate inactive sessions.                                                                                                    |
+| track_io_timing                     | FAILED        | LOW       | track_io_timing is disabled. Enabling this setting allows for measuring I/O timings which is useful for performance diagnostics.                               |
+| track_wal_io_timing                 | FAILED        | LOW       | track_wal_io_timing is disabled. Enabling this setting allows for measuring WAL I/O timings which can help diagnose WAL-related performance issues.            |
+| track_commit_timestamp              | FAILED        | LOW       | track_commit_timestamp is disabled. Enabling this setting allows tracking transaction commit timestamps, which is useful for replication and temporal queries. |
+| log_lock_waits                      | FAILED        | LOW       | log_lock_waits is disabled. Enabling this setting allows logging of lock wait events, which can help diagnose lock contention issues.                          |
+| log_temp_files                      | PASSED        | LOW       | log_temp_files is set to 100KB, which logs usage of temporary files larger than this threshold to help identify inefficient queries.                           |
+| idle_in_transaction_session_timeout | FAILED        | LOW       | No timeout set. Add timeout to prevent resource locks.                                                                                                         |
+| statement_timeout                   | FAILED        | LOW       | No timeout set. Add timeout to prevent long-running queries.                                                                                                   |
 
 
 ## Contributing
