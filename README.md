@@ -79,19 +79,6 @@ python check-configurations.py --cpu-count 8 --memory-gb 32 --storage-type ssd -
 - `--desired-rto`: Desired Recovery Time Objective in minutes
 - `--deployment-type`: Deployment type (`onprem` or `rds`, defaults to `onprem`)
 
-## Project Structure
-
-crafted-tools/
-├── configuration-assessment/
-│ ├── check-configurations.py # Main script
-│ ├── enums/ # Enum definitions
-│ │ ├── init.py
-│ │ ├── deployment_type.py # Deployment type enum
-│ │ └── storage_type.py # Storage type enum
-│ └── assessments/ # Assessment modules
-│ ├── init.py
-│ ├── checkpoints.py # Checkpoint-related assessments
-│ └── workers.py # Worker-related assessments
 
 ## Assessment Categories
 
