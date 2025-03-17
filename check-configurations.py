@@ -9,6 +9,8 @@ from pathlib import Path
 from enums.storage_type import StorageType
 from enums.deployment_type import DeploymentType
 from assessments import CheckpointAssessment, WorkerAssessment
+from assessments.timeouts import TimeoutsAssessment
+from assessments.observability import ObservabilityAssessment
 
 class PostgresqlConnection:
     """
@@ -258,7 +260,7 @@ class PostgresqlConnection:
                 return [{
                     "parameter": "shared_buffers",
                     "check_result": "FAILED" if is_failed else "PASSED",
-                    "priority": "HIGH" if is_failed else "LOW",
+                    "priority": "HIGH",
                     "notes": (f"Exceeds 40% of memory ({shared_buffers_gb:.1f}GB/{memory_threshold:.1f}GB). Reduce to prevent OS pressure."
                             if is_failed else
                             "Within acceptable range")
@@ -272,63 +274,6 @@ class PostgresqlConnection:
                 "notes": f"Error fetching shared_buffers parameter: {e}"
             }]
 
-    def check_checkpoint_timeout(self):
-        """
-        Checks if checkpoint_timeout is properly configured based on desired RTO.
-        Warns if checkpoint_timeout is greater than desired RTO.
-        
-        Returns:
-            list: List containing checkpoint_timeout assessment
-        """
-        try:
-            if self.desired_rto_in_minutes is None:
-                return [{
-                    "parameter": "checkpoint_timeout",
-                    "check_result": "SKIPPED",
-                    "priority": "LOW",
-                    "notes": "No RTO specified"
-                }]
-
-            with self.connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT setting, unit 
-                    FROM pg_settings 
-                    WHERE name = 'checkpoint_timeout';
-                """)
-                
-                setting, unit = cursor.fetchone()
-                timeout_seconds = int(setting)
-                
-                if unit == 's':
-                    timeout_minutes = timeout_seconds / 60
-                elif unit == 'min':
-                    timeout_minutes = timeout_seconds
-                else:
-                    return [{
-                        "parameter": "checkpoint_timeout",
-                        "check_result": "ERROR",
-                        "priority": "HIGH",
-                        "notes": f"Unexpected unit for checkpoint_timeout: {unit}"
-                    }]
-                
-                is_failed = timeout_minutes > self.desired_rto_in_minutes
-                
-                return [{
-                    "parameter": "checkpoint_timeout",
-                    "check_result": "FAILED" if is_failed else "PASSED",
-                    "priority": "HIGH" if is_failed else "LOW",
-                    "notes": (f"Exceeds RTO ({timeout_minutes:.1f}min > {self.desired_rto_in_minutes}min). Reduce to meet recovery objectives."
-                            if is_failed else
-                            "Within acceptable range for RTO")
-                }]
-                
-        except psycopg2.Error as e:
-            return [{
-                "parameter": "checkpoint_timeout",
-                "check_result": "ERROR",
-                "priority": "HIGH",
-                "notes": f"Error fetching checkpoint_timeout parameter: {e}"
-            }]
 
     def check_max_connections_memory(self):
         """
@@ -395,7 +340,7 @@ class PostgresqlConnection:
                 return [{
                     "parameter": "max_connections",
                     "check_result": "FAILED" if is_failed else "PASSED",
-                    "priority": "HIGH" if is_failed else "LOW",
+                    "priority": "HIGH",
                     "notes": (f"Memory usage ({total_memory_needed_gb:.1f}GB) may exceed available ({self.memory_gb}GB). "
                             f"Reduce connections ({max_connections}) or work_mem ({work_mem_mb:.0f}MB)."
                             if is_failed else
@@ -459,77 +404,6 @@ class PostgresqlConnection:
             }]
 
 
-    def check_idle_timeouts(self):
-        """
-        Checks if idle_in_transaction_session_timeout, idle_session_timeout,
-        and statement_timeout are configured with non-zero values.
-        
-        Returns:
-            list: List containing timeout assessments
-        """
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT name, setting::int, unit
-                    FROM pg_settings 
-                    WHERE name IN (
-                        'idle_in_transaction_session_timeout', 
-                        'idle_session_timeout',
-                        'statement_timeout'
-                    );
-                """)
-                
-                settings = {row[0]: {"value": row[1], "unit": row[2]} for row in cursor.fetchall()}
-                results = []
-                
-                # Check idle_in_transaction_session_timeout
-                trans_timeout = settings.get('idle_in_transaction_session_timeout', {"value": 0})
-                is_trans_timeout_disabled = trans_timeout["value"] == 0
-                
-                results.append({
-                    "parameter": "idle_in_transaction_session_timeout",
-                    "check_result": "FAILED" if is_trans_timeout_disabled else "PASSED",
-                    "priority": "LOW",
-                    "notes": ("No timeout set. Add timeout to prevent resource locks."
-                            if is_trans_timeout_disabled else
-                            f"Timeout set: {trans_timeout['value']} {trans_timeout['unit']}")
-                })
-                
-                # Check idle_session_timeout
-                session_timeout = settings.get('idle_session_timeout', {"value": 0})
-                is_session_timeout_disabled = session_timeout["value"] == 0
-                
-                results.append({
-                    "parameter": "idle_session_timeout",
-                    "check_result": "FAILED" if is_session_timeout_disabled else "PASSED",
-                    "priority": "LOW",
-                    "notes": ("No timeout set. Add timeout to terminate inactive sessions."
-                            if is_session_timeout_disabled else
-                            f"Timeout set: {session_timeout['value']} {session_timeout['unit']}")
-                })
-
-                # Check statement_timeout
-                stmt_timeout = settings.get('statement_timeout', {"value": 0})
-                is_stmt_timeout_disabled = stmt_timeout["value"] == 0
-                
-                results.append({
-                    "parameter": "statement_timeout",
-                    "check_result": "FAILED" if is_stmt_timeout_disabled else "PASSED",
-                    "priority": "LOW",
-                    "notes": ("No timeout set. Add timeout to prevent long-running queries."
-                            if is_stmt_timeout_disabled else
-                            f"Timeout set: {stmt_timeout['value']} {stmt_timeout['unit']}")
-                })
-                
-                return results
-                
-        except psycopg2.Error as e:
-            return [{
-                "parameter": "timeouts",
-                "check_result": "ERROR",
-                "priority": "HIGH",
-                "notes": f"Error: {e}"
-            }]
 
     def check_work_mem(self):
         """
@@ -604,7 +478,7 @@ class PostgresqlConnection:
                 return [{
                     "parameter": "work_mem",
                     "check_result": "FAILED" if is_failed else "PASSED",
-                    "priority": "HIGH" if is_failed else "LOW",
+                    "priority": "HIGH",
                     "notes": (f"Potential usage ({potential_usage_mb:.0f}MB) exceeds 25% limit ({possible_avail_mb:.0f}MB). "
                             f"Reduce work_mem or connections."
                             if is_failed else
@@ -625,7 +499,8 @@ class PostgresqlConnection:
                       show_skipped=True,
                       priorities=None,
                       parameters=None,
-                      output_format='grid'):
+                      output_format='grid',
+                      csv_file=None):
         """
         Formats the assessment results based on provided parameters.
         
@@ -637,6 +512,7 @@ class PostgresqlConnection:
             priorities (list): List of priorities to include (e.g., ['HIGH', 'MEDIUM'])
             parameters (list): List of specific parameters to include
             output_format (str): Output format ('grid', 'simple', 'pipe', etc.)
+            csv_file (str): Optional path to save results as CSV
         
         Returns:
             str: Formatted assessment results
@@ -665,6 +541,14 @@ class PostgresqlConnection:
                 df['priority_sort'] = df['priority'].map(priority_order)
                 df = df.sort_values('priority_sort').drop('priority_sort', axis=1)
             
+            # Save to CSV if filename provided
+            if csv_file:
+                try:
+                    df.to_csv(csv_file, index=False)
+                    print(f"Results saved to {csv_file}")
+                except Exception as e:
+                    print(f"Error saving to CSV: {str(e)}")
+            
             # Return empty string if no results match filters
             if df.empty:
                 return "No results match the specified criteria."
@@ -689,11 +573,9 @@ class PostgresqlConnection:
         results = []
         results.extend(self.check_page_cost_parameters())
         results.extend(self.check_shared_buffers())
-        results.extend(self.check_checkpoint_timeout())
         results.extend(self.check_max_connections_memory())
         results.extend(self.check_maintenance_work_mem())
         results.extend(self.check_work_mem())
-        results.extend(self.check_idle_timeouts())
         
         # Return formatted results if format parameters provided
         if format_params:
@@ -721,6 +603,9 @@ if __name__ == "__main__":
                        type=str,
                        choices=['onprem', 'rds'],
                        help='Deployment type (onprem or rds)')
+    parser.add_argument('--csv-output',
+                       type=str,
+                       help='Path to save results as CSV file')
 
     args = parser.parse_args()
 
@@ -744,8 +629,10 @@ if __name__ == "__main__":
             deployment_type=deployment_type
         )
         
-        checkpoint_assessment = CheckpointAssessment(postgresql_instance.get_connection())
+        checkpoint_assessment = CheckpointAssessment(postgresql_instance.get_connection(), postgresql_instance.desired_rto_in_minutes)
         worker_assessment = WorkerAssessment(postgresql_instance.get_connection(), postgresql_instance.cpu_count)
+        observability_assessment = ObservabilityAssessment(postgresql_instance.get_connection())
+        timeouts_assessment = TimeoutsAssessment(postgresql_instance.get_connection())
         # Get the connection and test it
         conn = postgresql_instance.get_connection()
         with conn.cursor() as cursor:
@@ -756,16 +643,19 @@ if __name__ == "__main__":
             all_results = postgresql_instance.check_all_parameters()
             checkpoint_results = checkpoint_assessment.prepare_checkpoint_stats()
             worker_results = worker_assessment.prepare_worker_stats()
+            observability_results = observability_assessment.assess_monitoring_settings()
             all_results.extend(checkpoint_results)
             all_results.extend(worker_results)
-            
+            all_results.extend(observability_results)
+            all_results.extend(timeouts_assessment.check_idle_timeouts())
             # Format and display results
             print(f"PostgreSQL {version[0]}\n")
             formatted_results = postgresql_instance.format_results(
                 all_results,
                 show_passed=True,
                 sort_by_priority=True,
-                output_format='grid'
+                output_format='grid',
+                csv_file=args.csv_output
             )
             print(formatted_results)
         
